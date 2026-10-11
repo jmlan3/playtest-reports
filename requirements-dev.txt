@@ -1,0 +1,4 @@
+# Test-only dependencies. The Lambda itself needs nothing beyond the standard
+# library and the boto3 that ships with the python3.12 runtime.
+pytest==9.1.1
+boto3==1.43.111
