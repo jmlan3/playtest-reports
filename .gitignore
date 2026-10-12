@@ -38,3 +38,5 @@ htmlcov/
 .idea/
 .DS_Store
 Thumbs.db
+# Personal study notes, not published
+notes/

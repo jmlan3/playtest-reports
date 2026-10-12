@@ -23,7 +23,9 @@ env:
 jobs:
   test:
     name: pytest
-    runs-on: ubuntu-latest
+    # A fixed image rather than ubuntu-latest, which moves to Ubuntu 26 from
+    # 19 October 2026: the OS changes only when this line does.
+    runs-on: ubuntu-24.04
     permissions:
       contents: read # no AWS access needed
     steps:
@@ -46,7 +48,7 @@ jobs:
     if: >-
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -84,7 +86,7 @@ jobs:
     name: terraform apply
     needs: test
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Applies never overlap: a second run waits for the first to finish. If
     # several merges land during one apply, only the newest keeps waiting and
     # the ones in between are cancelled. That's fine: the newest commit
