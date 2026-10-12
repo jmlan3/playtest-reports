@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# The GITHUB_TOKEN can only read the repo. id-token: write lets a job ask
+# GitHub for an OIDC token, which AWS exchanges for temporary credentials.
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_VERSION: 1.16.5 # same as local, and within required_version
+  AWS_REGION: us-east-1
+  TF_IN_AUTOMATION: "true" # trims "run terraform apply next" hints from output
+  TF_INPUT: "false" # fail instead of waiting for input that never comes
+
+# Third-party actions are pinned to a full commit SHA (tag in the comment):
+# a tag can be moved to different code, a commit can't.
+jobs:
+  test:
+    name: pytest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # no AWS access needed
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12" # the Lambda runtime
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -v
+
+  plan:
+    name: terraform plan
+    needs: test
+    # Pull requests from forks get no OIDC token or secrets, so skip the job
+    # for them instead of failing it.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff
+
+      # CI can't read bootstrap's state (by design), so validate it without
+      # a backend. It's still applied by hand.
+      - name: terraform validate (bootstrap)
+        run: |
+          terraform -chdir=bootstrap init -backend=false
+          terraform -chdir=bootstrap validate
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: github-${{ github.run_id }} # shows in CloudTrail
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true # public logs show *** instead of the ID
+
+      - name: terraform init
+        run: terraform -chdir=infra init
+      - name: terraform validate
+        run: terraform -chdir=infra validate
+      - name: terraform plan
+        run: terraform -chdir=infra plan -lock-timeout=5m
+
+  apply:
+    name: terraform apply
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # Applies never overlap: a second run waits for the first to finish. If
+    # several merges land during one apply, only the newest keeps waiting and
+    # the ones in between are cancelled. That's fine: the newest commit
+    # includes all of their changes.
+    concurrency:
+      group: terraform-apply
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-session-name: github-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: terraform init
+        run: terraform -chdir=infra init
+      # Plan to a file and apply exactly that file, so what's applied is what
+      # the log shows.
+      - name: terraform plan
+        run: terraform -chdir=infra plan -lock-timeout=5m -out=tfplan
+      - name: terraform apply
+        run: terraform -chdir=infra apply -lock-timeout=5m tfplan

@@ -15,3 +15,17 @@ variable "github_repository" {
   type        = string
   default     = "jmlan3/playtest-reports"
 }
+
+# Public numbers, not secrets: https://api.github.com/repos/<owner>/<name>
+# returns them as owner.id and id.
+variable "github_owner_id" {
+  description = "Numeric ID of the repository's owner account."
+  type        = string
+  default     = "128272466"
+}
+
+variable "github_repository_id" {
+  description = "Numeric ID of the repository."
+  type        = string
+  default     = "1414745494"
+}

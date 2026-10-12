@@ -1,10 +1,11 @@
 # A permissions boundary is a ceiling, not a grant: a role's effective
 # permissions are the overlap of its own policies and its boundary.
 #
-# From stage 4 the deploy role can only create or change IAM roles that carry
-# this boundary. Without that rule, anyone able to change a workflow could
-# use the deploy role to create an admin role. With it, the worst they can
-# create is a role limited to this project's table, secret and logs.
+# The deploy role can only create or change IAM roles that carry this
+# boundary (see deploy_permissions.tf). Without that rule, anyone able to
+# change a workflow could use the deploy role to create an admin role. With
+# it, the worst they can create is a role limited to this project's table,
+# secret and logs.
 #
 # It lives here, not in infra/, so the deploy role can't edit its own ceiling.
 data "aws_iam_policy_document" "workload_boundary" {
@@ -26,21 +27,9 @@ data "aws_iam_policy_document" "workload_boundary" {
     resources = ["arn:aws:ssm:${local.region}:${local.account_id}:parameter/${var.project}/*"]
   }
 
-  # SecureString values are encrypted with KMS. This only works through SSM,
-  # never as a direct KMS call. Stage 4 checks whether the Lambda needs it with
-  # the AWS-managed aws/ssm key; listing it here costs nothing either way,
-  # because a boundary grants nothing by itself.
-  statement {
-    sid       = "DecryptThroughSsmOnly"
-    actions   = ["kms:Decrypt"]
-    resources = ["arn:aws:kms:${local.region}:${local.account_id}:key/*"]
-
-    condition {
-      test     = "StringEquals"
-      variable = "kms:ViaService"
-      values   = ["ssm.${local.region}.amazonaws.com"]
-    }
-  }
+  # No kms:Decrypt: the secret uses the AWS-managed aws/ssm key, and the
+  # Lambda reads it with ssm:GetParameter alone (verified against the live
+  # API).
 
   statement {
     sid     = "WriteOwnLogs"

@@ -8,6 +8,7 @@ so these tests need no AWS credentials.
 
 import base64
 import json
+from types import SimpleNamespace
 
 import boto3
 import pytest
@@ -232,12 +233,39 @@ def test_size_limit_applies_after_base64_decoding(aws):
     assert body["details"] == ["message must be at most 2000 characters"]
 
 
-def test_post_with_deeply_nested_json_returns_400(aws):
+def nested_arrays(depth):
+    return "[" * depth + "]" * depth
+
+
+@pytest.mark.parametrize("where", ["whole body", "gameState"])
+def test_post_with_deeply_nested_json_returns_400(aws, where):
+    # How deep Python's JSON parser can go depends on the OS: about 3,000
+    # levels on Windows, more on Linux (where CI and Lambda run). The error
+    # message therefore differs by platform, but the status must always be
+    # 400, never 500.
     expect_secret_lookup(aws)
     event = make_event("POST /reports")
-    event["body"] = "[" * 5000 + "]" * 5000
+    if where == "whole body":
+        event["body"] = nested_arrays(5000)
+    else:
+        report = {key: value for key, value in REPORT.items() if key != "gameState"}
+        event["body"] = json.dumps(report)[:-1] + ', "gameState": {"a": ' + nested_arrays(5000) + "}}"
 
-    status, body = call(event)
+    status, _ = call(event)
+
+    assert status == 400
+
+
+def test_parser_recursion_error_returns_400(aws, monkeypatch):
+    # Forces the RecursionError branch on every platform, instead of relying
+    # on a nesting depth that only some systems reject.
+    def too_deep(*args, **kwargs):
+        raise RecursionError("maximum recursion depth exceeded")
+
+    expect_secret_lookup(aws)
+    monkeypatch.setattr(handler, "json", SimpleNamespace(loads=too_deep, dumps=json.dumps))
+
+    status, body = call(make_event("POST /reports", REPORT))
 
     assert status == 400
     assert body["details"] == ["request body is not valid JSON"]
