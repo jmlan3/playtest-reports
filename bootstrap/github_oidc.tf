@@ -7,6 +7,20 @@ resource "aws_iam_openid_connect_provider" "github" {
   # trusted certificate authorities, so pinned thumbprints aren't needed.
 }
 
+# Repositories created after 15 July 2026, like this one, get "immutable"
+# subject claims that include numeric IDs:
+#   repo:OWNER@OWNER_ID/REPO@REPO_ID:...
+# Matching the IDs as well as the names means that if the owner account were
+# ever renamed or deleted and someone else took the name, their repository
+# still couldn't assume this role.
+locals {
+  github_subject = format(
+    "repo:%s@%s/%s@%s",
+    split("/", var.github_repository)[0], var.github_owner_id,
+    split("/", var.github_repository)[1], var.github_repository_id,
+  )
+}
+
 # Who may assume the deploy role (the trust policy).
 data "aws_iam_policy_document" "github_trust" {
   statement {
@@ -31,8 +45,8 @@ data "aws_iam_policy_document" "github_trust" {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
       values = [
-        "repo:${var.github_repository}:ref:refs/heads/main",
-        "repo:${var.github_repository}:pull_request",
+        "${local.github_subject}:ref:refs/heads/main",
+        "${local.github_subject}:pull_request",
       ]
     }
   }
