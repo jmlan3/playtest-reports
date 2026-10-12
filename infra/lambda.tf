@@ -23,6 +23,7 @@ resource "aws_cloudwatch_log_group" "lambda" {
 
 resource "aws_lambda_function" "api" {
   function_name    = var.project
+  description      = "Playtest bug-report API: POST and GET /reports"
   role             = aws_iam_role.lambda.arn
   runtime          = "python3.12"
   handler          = "handler.lambda_handler"

@@ -45,8 +45,8 @@ resource "aws_iam_role" "deploy" {
 }
 
 # What the deploy role may do, part 1: read and write infra/'s state file and
-# its lock file. The permissions to manage infra/'s resources are added in
-# stage 4, generated from infra/'s Terraform plan.
+# its lock file. Part 2, managing infra/'s resources, is in
+# deploy_permissions.tf.
 data "aws_iam_policy_document" "deploy_state" {
   statement {
     sid       = "ListStateBucket"
