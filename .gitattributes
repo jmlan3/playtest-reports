@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Always LF in the working tree too, even on Windows. Terraform zips src/ for
+# Lambda, and the zip's hash decides whether the code is redeployed, so it has
+# to be byte-identical on this machine and in CI.
+*.py text eol=lf
